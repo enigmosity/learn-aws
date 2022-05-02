@@ -159,7 +159,7 @@ For the Developer Associate certification, the file system policy is out of scop
     - the `amazon-efs-utils` package on the instance for DNS, which you need to ssh into the instance for
 - to mount an EFS, you need to enable inbound calls to the EC2 instance from the EFS
 
-EBS vs EFS
+EBS vs EFS vs Instance store
 
 EBS:
 - attached to one instance at a time
@@ -178,5 +178,9 @@ EFS:
 - only for linux instances
 - higher price point than EBS
 - can leverage EFS-IA for cost savings
+
+Instance Store
+- better performance, higher I/O
+- lose storage when stopped
 
 For the certification exam, make sure you understand EFS versus EBS versus Instance Store
