@@ -34,7 +34,7 @@ To define access to the internet and between subnets, use *Route tables*
 - all traffic hits these before an instance
 
 *Security groups*
-- firewall that controls traffic to and from an ENI (elastic network interface) / EC2 instance
+- firewall that controls traffic to and from an ENI (Elastic Network Interface) / EC2 instance
 - only ALLOW rykes
 - rules include IP addresses and other security groups
 
@@ -57,15 +57,15 @@ To define access to the internet and between subnets, use *Route tables*
 
 - connect two VPC, privately using AWS network
 - make them behave as if in the same network
-- must nothave an overlapping CIDR (ip address range)
+- must no thave an overlapping CIDR (IP address range)
 - peering connection is *not transitive* (must establish for each VPC that needs to communicate with each other)
 
-*VPC Endpoints*
+**VPC Endpoints**
 - allow you to connect to AWS services using a private network instead of the public www network
 - enhanced security and lower latency to access AWS services
 
-VPC Endpoint Gateway: S3 & DynamoDB
-VPC Endpoint Interface: the rest of the AWS services
+*VPC Endpoint Gateway*: S3 & DynamoDB
+*VPC Endpoint Interface*: the rest of the AWS services
 
 *Only used within the VPC*
 
@@ -74,7 +74,7 @@ EXAM: VPC endpoints are important for the exam, likely to be a question.
 *Site-to-Site VPN*
 - connect on premises VPN to AWS
 - connection automaticaly encrypted
-- over opublic internet
+- over public internet
 
 *Direct Connect (DX)*
 - physical connection between on-premise and AWS
