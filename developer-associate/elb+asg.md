@@ -85,6 +85,10 @@ Healthchecks are at the target group level
 - true IP of client is inserted in the header *X-Forwarded-For*
 - can also get port in *X-Forwarded-Port* and proto in *X-Forwarded-Proto*
 
+*Only Network Load Balancer provides both static DNS name and static IP. While, Application Load Balancer provides a static DNS name but it does NOT provide a static IP. The reason being that AWS wants your Elastic Load Balancer to be accessible using a static endpoint, even if the underlying infrastructure that AWS manages changes.*
+
+*Network Load Balancer has one static IP address per AZ and you can attach an Elastic IP address to it. Application Load Balancers and Classic Load Balancers as a static DNS name.*
+
 ## Network Load Balancer (v2)
 
 - layer 4:
@@ -177,7 +181,7 @@ CLB:
     - *clients can use SNI (server name indication) to specify hostname that they reach*
     - ability to set security policy to support older versions of SSL/TLS (legacy clients)
 
-*SNI (Server Name Indication)*:
+## SNI (Server Name Indication)
 - solves problem of loading multiple SSL certs onto one web server to serve multiple websites
 - a 'newer' protocol and requires the client indicate the hostname of the target server in the initial SSL handshake
 - server will then find the correct cert, or return the default one
