@@ -160,4 +160,3 @@ Edge locations all around the world, cost of data out per edge location varies
     - specify set of fields in POST requests that you want to be encrypted (up to 10 fields)
     - specify the public key to encrypt them
     - web server has private key, only web server can decrypt. requires custom application logic
-
