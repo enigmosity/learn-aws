@@ -72,6 +72,7 @@ To allow only the load balancer to interact with the EC2 instance, set the sourc
 - comparison: multiple Classic Load Balancers required per application
 
 *Target groups*:
+- used to route requests to one of more registered target
 - EC2 instances - HTTP
 - ECS tasks - HTTP
 - lambda functions - HTTP request translated into a JSON event
