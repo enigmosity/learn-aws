@@ -237,7 +237,7 @@ RDS can have delete protection turned on that you have to turn off before being 
 ## Redis vs Memcached
 
 ### Redis:
-- multi-Availability Zone with auto-failover
+- multi-availability zone with auto-failover
 - read replicas to scale reads and have high availability
 - data durability using AOF persistence
 - backup and restore features

@@ -10,11 +10,22 @@
     - *Default Values* apply if the option is not set an any of the other levels
     - setting in location with highest precedence is applied.
     - *Settings in configuration files are not applied directly to the environment and cannot be removed without modifying the configuration files and deploying a new application version.*
+- there are two methods to save configuration options settings. Config files in YAML or JSON can be included in application's source code in the `.ebextensions` and deployed as part of application source bundle. 
 - if you want to deploy a worker application that processes periodic background tasks, application source bundle must also include a cron.yaml file
 - *immutable deployments*: launch a full set of new instances running the new version of the application in a separate ASG, alongisde the instances running the old version. If new instances don't pass healthchecks, Elastic Beanstalk terminates them leaving the original instances untouched.
 - Blue/Green deployments allow you to have a separate deployment environment.
 - if you can't find an AMI to run your code, use Packer to create a custom platform which will run it.
-
+- custom_platform.json is the file for creating a custom platform with Packer
+    - *source_ami* is required in a packer template. It is the base operating systems used to create a custom AMI. Could be: amazon linux AI, ubuntu1604, rhel7, rhel6
+    - the region id required in a packer template and should be the same as the region from which the AMI of the EC2 instance is copied.
+- Dockerrun.aws.json version 2 file can be used to specify EC2 container instance and file volumes for multi-container Docker platform in Beanstalk environments. The file has 3 sections
+    1. AWSEVDockerrunVersion: version 2 for multi-container Docker environments
+    2. ContainerDefinitions: to specify container definitions
+    3. Volumes: creates volumes from folders in the EC2 container instance or source bundle
+- `docker-compose.yml` file is used to deploy the docker image from a hosted repository to the beanstalk env. No version 1 or 2 associated with the file.
+- Dockerrun.aws.json version 1 file is used to deploy a single docker container to the beanstalk env
+- with traffic splitting deployment, beanstalk will launch a completely new set of instances with new versions in a separate ASG and forward on a certain percentage of traffic to the new version during the evaluation period. The percentage of traffic to be diverted to the new version is specified in 'NewVersionPercent' while evaluation time is specified in the 'EvaluationTime' parameter.
+- 
 
 ## SAM
 
@@ -22,6 +33,8 @@
 - `AWS::Serverless::API` - used for creating API Gateway resources and methods that can be invoked through HTTPS endpoints
 - `AWS::Serverless::LayerVersion` - creates a Lambda layered function
 - `AWS::Serverless::Function` - describes the configuration for creating a Lambda Function
+- function code needs to be at the root level fo the working directory along with the YAML file
+- `DeploymentPreference` in a SAM template can be used to specify traffic shifting patterns. Since it is required to migrate traffic to the new application version quickly, `Canary*X*Percent*Y*Minutes` can be used. With the DeploymentPreference parameter as Canary10Percent10Minutes, 10% of traffic will be reouted to the new version for 10 minutes, after which, 100% of traffic will be routed to the new version
 
 ## DynamoDB
 
@@ -36,9 +49,13 @@
     - *use composite attributes*: combine more than one attribute to form a unique key
 - by default for encryption at rest, DynamoDB uses an *AWS owned key*, a multi-tenant key that is created adn managed in a DynamoDB service account. Can encrypt tables under a CMK or AWS managed key in your AWS account
 - server-side encryption is enabled on all DynamoDB table data.
-- 1 RCU can support 2 eventually-consistent reads
+- [1 RCU can support 2 eventually-consistent reads](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadWriteCapacityMode.html)
 - **when calculating WCU/RCU round off partial values.**
 - DynamoDB is an alternative solution that can be used for the storage of session management as latency of access to data is less.
+- *global tables* provide a fully managed solution for deploying a multi-region, multi-master database without building and maintaining your own replication solution. When creating a global table, specify the regions you want the table available. DynamoDB performs all the necessary tasls to create identical tables in regions and propogate ongoing data changes to all of them.
+- when asked how many reads per second are achievable with certain capacity units, do the maths to see how much data size can be read or written
+- can create secondary indexes on a table and issue Query or Scan requests against them, with using a secondary key instead of the primary. 
+    - a secondary index is a data structure that contains a subset of attributes from a table, along with an alternate key to support Query operations. With multiple secondary indexes, you can support many different query patterns
 
 ### DAX
 
@@ -57,6 +74,10 @@ Addresses 3 core scenarios:
 - TODO: look into the $LATEST alias, $LATEST version has two ARNs associated with it, Qualified ARN and Unqualified ARN. What does that mean? [Probably start here.](https://docs.aws.amazon.com/lambda/latest/dg/configuration-versions.html)
 - a *Publish version* is a snapshot coy of a Lambda Function code and configuration in $LATEST version. No configuration changes can be done to a published version and it has a unique ARN which cannot be modified.
 - best practice is to avoid using recursive Lambda functions, as it could lead to an unintended volu,e of function invocations and escalated costs. If you do create one, set the concurrent execution limit to Zerp to immediately throttle all invocations to the function while you update the code.
+- Lambda functions have a default timeout of 3 seconds. This timeout can be expanded to 900 seconds
+- to deal with `LambdaThrottledExceptions` while using Cognito Events you need to implement retries on synchronous operations while writing the lambda function
+- minimise deployment package to runtime necessities. For functions in Java and .Net, avoid uploading the entire AWS SDK library. Instead selectively depend on modules which pick up components of the SDK you need.
+- by default, an alias points to a single Lambda version. When the alias is updated to point to a different version incoming request traffic instantly points to the updated version. This exposes that lias to any potential instabilities introduced by the new version. To minimise impact, implement the routing-config parameter of the Lambda alias that allows you to point to two different versionf of the lambda and dictate what percentage of incoming traffic is sent to each.
 
 ## CloudFormation
 
@@ -84,6 +105,12 @@ Addresses 3 core scenarios:
 
 - SQS extended client library for *Java* is the only way to manage messages in the SQS queue using S3. For messages greater than 256KB, and then referenced using the extended client library for Java.
 - to allow for prioritisation of messages in a queue, create two SQS queues, one with higher priority, then messages can be processed by the application from the high priority queue first.
+- default settings for SQS queues are a 30 second visbility timeout. If the application needs more time for processing, you need to change this.
+
+### FIFO SQS
+
+- *existing standard queues cannot be converted into FIFO queues.*
+- designed to enhance messaging between applications when order of operations and events is critical or where duplicates can't be tolerated
 
 ## ElastiCache
 
@@ -99,6 +126,14 @@ Addresses 3 core scenarios:
 
 - permissions of IAM useres and roles assumed are not cumulative, there is *only one set of permissions active at a time*. When you assume a role, you temporarily give up your previous permissions and work with the permissions assigned to the role.
 - STS:GetSessionToken is used if you want to use MDA to protect programmatic calls to specific AWS API operations. MFA-enabled IAM users would need to call GetSessionToken and submit an MDA code associated with their MFA device.
+- *[cross-account access](https://docs.aws.amazon.com/codecommit/latest/userguide/cross-account.html)* for whenever you want users and groups to access stuff in another account
+- policy simulator commands typically require calling API operations to do two things
+    1. evaluate the policies and return the list of context keys that they reference. Need to know what context keys are referenced so you can supply values for them in the next step
+    2. simulate the policies, providing a list of actions, resources and context keys that are used during the simulation
+    - TODO: what are context keys?
+- IAM policy simulator testing to test resource-based policies requires resources to be included in the simulator and the resource policy needs to be selected for that resource.
+- 
+
 
 ## RDS
 
@@ -107,7 +142,10 @@ Addresses 3 core scenarios:
 ## API Gateway
 
 - Stage variables are name-value pairs that you can define as configuration attributes associated with a deployment stage of an API. They act like environment variables and can be used in your API setup and mapping templates.
-- TODO: what is the HTTP integration request of the API? [probably start here](https://docs.aws.amazon.com/apigateway/latest/developerguide/stage-variables.html)
+- TODO: what is the HTTP integration request of the API? 
+    - [probably start here](https://docs.aws.amazon.com/apigateway/latest/developerguide/stage-variables.html)
+    - [or with these gateway docs](https://docs.aws.amazon.com/apigateway/latest/developerguide/welcome.html#api-gateway-overview-developer-experience)
+    - [or with these ones](https://aws.amazon.com/blogs/compute/using-amazon-api-gateway-as-a-proxy-for-dynamodb/)
 - developer controls behaviour of API's frontend interactions by configuring the method request and a method response. Control behaviour of backend API interactions by setting up the integration request and integration response. These involve data mappings between a method and its corresponding integration.
 - stage variable can be used as part of the HTTP integration URL in the folowing cases
     - full URI without protocol
@@ -115,6 +153,13 @@ Addresses 3 core scenarios:
     - subdomain
     - path
     - query string
+- an API stage is: 'a logical reference to a lifecycle state of your API. API stages are identified by API ID and stage name'
+- a deployment is represented by a `Deployment` resource. Like an executable of an API represented by a RestApi resource. For a client to call an API, must create a deployment and associate a stage to it. A stage is represented by a Stage resource and represents a snapshot of the API, including methods, integrations, models, mapping templates, Lambda authorisers etc.
+- to support CORS API resource needs to implement an OPTIONS method to respond to the OPTIONS preflight request with the following headers
+    - Access-Control-Allow-Headers 
+    - Access-Control-Allow-Origin
+    - Access-Control-Allow-Methods
+- to handle different template types defined (Content-Type header vs Accept header) for clients and apis, need to map the payloads. Use Request and Response Data mapping to do so.
 
 ## CloudWatch
 
@@ -130,10 +175,15 @@ Addresses 3 core scenarios:
 - Two ways to configure server-side encryption for S3 artifacts
     - CodePipeline creates an S3 artifact bucket and default AWS-managed SSE-KMS encryption keys when creating a pipeline using the Create Pipeline wizard. The master key is encrypted along with object data and managed by AWS.
     - can create and manage your own customer-managed SSE-KMS keys.
+- to optimise performance and security while effectively managing cost recommended to set up CloudFront for the S3 bucket to serve and protext content.
+- S3 Transfer Acceleration improves transfer performance by routing uploads and downloads through CloudFront's edge locations and over AWS backbone networks, using network protocol optimisations
+- cross-region replication is only for high availability, latency improvement and disaster recovery
 
 ### CORS
 
 - use CORS to get information from between S3 buckets. Using bucket policies opens up access to the entire bucket which is sub-optimal
+- if you're using the fully qualified domain name for a bucket, you're leaving the initial origin and CORS needs to be enabled.
+- if you're making a request to outside of an APIs own domain, you also need to enables CORS
 
 ## Envelope Encryption
 
@@ -155,12 +205,15 @@ Addresses 3 core scenarios:
 
 - service for creating, managing and working with software development projects on AWS. Creates and integrates AWS service for project development toolchains. Also manages permissions required for project users. 
 - basically handles the development process side of things
+- service accelerates release with help of CodePipeline. Each project comes pre-configured with an automated pipeline that continuously builds, tests, and deploy code with each commit.
 
 ## CodeDeploy
 
 - if using Lambda, AppSpec file is used to specify
     - Lambda version to deploy
     - functions to be used as validation tests
+- to access secure parameters in Parameter Store, use ssm `get-parameters` and specify the `--with-decryption`option, which allows the CodeDeploy service to decrypt the passowrd so it can be used. Use IAM roles to ensure CodeDeploy can access Parameter Store.
+- if CodeDeploy generates "HEALTH_CONSTRAINTS_INVALID" error, make sure the required number of healthy instances are available during deployment, the number should be less than or equal to the total number of instances.
 
 ## ELB
 
@@ -179,3 +232,77 @@ Addresses 3 core scenarios:
 - deploying
     - *rolling with additonal batch deployment*: a new batch of EC2 instance is launched before taking a batch of instances out of service for deploying a new version. Once all EC2 instances are upgraed to a new version of the application, additional batch of EC2 instance is terminated. Ensures full capacity during deployment.
     - *immutable*: spins up entirely new ASG of instances and replaces the existing ones. If replacement is not required, this option is a no go.
+- Applications must sign their API requests with AWS credentials. Therefore if you are an application developer, you need a strategy for managing credentials for your applications that run on EC2 instances. IAM roles are designed so that applications can securely make API requests from instances without requiring management of security credentials that applications use. Instead of creating and distributing AWS credentials, delegate permission to make API requests using IAM roles by:
+    1. create an IAM role
+    2. define which accounts or AWS services can assume the role
+    3. define which API actions and resources the application can use after assuming the role
+    4. specify the role when you launch your instance, or attach the role to a running or stopped instance
+    5. have the application retrieve a set of temporary credentials and use them
+
+## X-Ray
+
+- `~/xray-daemon$./xray -o` command option can be used while running the X-Ray daemon locally and not on the EC2 instance. Will then skip checking EC2 instance metadata
+- [info on configuring AWS X-Ray daemon](https://docs.aws.amazon.com/xray/latest/devguide/xray-daemon-configuration.html)
+
+## Kinesis
+
+- encryption at rest is most easily handled using in-built Server-side encryption available with Kinesis Streams. Automatically encrypts data before at rest using a KMS CMK you specify. Data is encrypted before written to Kinesis stream storage layer and decrypted after retrieval from storage. 
+
+### Kinesis Data Streams
+
+- expects you to call PutRecord API to write serially to a shard while using the `sequenceNumberForOrdering` parameters. This parameter guarantees strictly increasing of sequence numbers for puts from same client and to same partition key.
+- use server-side encryption for data encryption at rest with an AWS KMS CMK. Encrypted before written to the stream storage layer and decrypted after retrieval.
+- can select either an existing kinesis stream or create a new one to have Cognito Streams push all sync data to streams.
+
+### Kinesis data firehose
+
+- fully managed service for delivering *real-time stream data* to destinations such as S3, Redshift, ElasticSearch and Splunk. [What is this service](https://docs.aws.amazon.com/firehose/latest/dev/what-is-this-service.html)
+
+
+## KMS
+
+- requests directly to KMS and using AWS services both have the KMS request limit apply. This can result in throttling.
+- AWS Encryption SDK is a client-side encryption library that makes it easier to implement cryptography best practices in applications. Includes secure default behaviour for developeres who are not encryption experts, while being flexible enough to work for most experienced users. By default, generate a new data key for each encryption operation
+    - to encrypt data: use the CMK to generate a data key for the encryption process
+    - to decrypt: use the generated data key
+
+## Cognito
+
+- Roles can have rules assigned to them. When multiple rules are assigned, rules are evaluated in a sequential order & the IAM role for the first matching rule is used unless a 'CustomRoleArn' attribute is added to modify this sequence.
+- Cognito with MFA allows MFA be required with a User Pool
+
+## STS
+
+- aspects that get incorporated into the STS call are:
+    - ARN of the role the app should assume
+    - duration of the temporary security credentials
+    - role session name, string value used to identify the session, which can be captured and logged by CloudTrail to help distinguish between role users during an audit
+- `aws sts decode-authorization-message` command decodes information about authorisation status of a request from an encoded mesage returned in an AWS response
+
+## ECS
+
+- ECS schedules containers for execution on customer-controlled EC2 instances or with Fargate and builds on the same isolation controls and compliance that is available for EC2 customers. Compute instances are located in a VPC iwth an IP range you specify. You decide which instances are exposed to the net, and which remain private. The EC2 instances use an IAM role to access the ECS service
+    - ECS tasks use an IAM role to access services and resources
+    - security groups and network ACLs allow control of inbound and outbound network access to and from instances
+    - can connect existing infrastructure to resources in VPC using industry-standard encrypted IPsec VPN connections
+    - can provision EC2 resources as Dedicated Instances, which are EC2 instances that run on hardware dedicated to a single customer for additional isolation
+
+## CloudTrail
+
+- CloudTrail logs āll authenticated requests to IAM and STS APIs, except DecodeAuthorizationMessage. Also logs nonauthenticated requests to STS actions, AssumeRoleWithSAML and AssumeRoleWithWebIdentity, and logs information provided by the identity provider. Can use this information to map calls made by a federated user with an assumed role back to the originating external federated caller.
+
+## Other
+
+- 429 errors are throttling. Best practice often includes exponential backoffs.
+- To make requests to AWS you must supply *AWS credentials to the AWS SDK for Java*.
+    - options:
+        - use the default credential chain provider
+        - use a specific credential provider or provider chain (or create your own)
+        - supply the credentials yourself (root account, IAM or temporary AWS STS credentials)
+    - when you initialise a new service client without supplying any arguments, the SDK for Java attempts to find AWS credentials using the default credential provider chain implemented by the DefaultAWSCredentialsProviderChain class. The default credential provider chain looks for credentials in this order:
+        1. *Environment variables* - AWS_KEY_ID + AWS_SECRET_ACESS_KEY
+        2. *Java system properties* - aws.accessKeyId and aws.secretKey
+        3. *Web Identity Token credentials* from the environment or container
+        4. *Default credential profiles file* - typically located at ~/.aws/credentials and shared by many AWS SDKs and CLIs.
+        5. *ECS container credentials* - loaded form ECS if the environment variable AWS_CONTAINER_CREDENTIALS_RELATIVE_URI is set
+        7. *Instance profile credentials* - used on EC2 instances and delivered through EC2 metadata service
