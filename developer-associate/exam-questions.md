@@ -13,7 +13,8 @@
 - there are two methods to save configuration options settings. Config files in YAML or JSON can be included in application's source code in the `.ebextensions` and deployed as part of application source bundle. 
 - if you want to deploy a worker application that processes periodic background tasks, application source bundle must also include a cron.yaml file
 - *immutable deployments*: launch a full set of new instances running the new version of the application in a separate ASG, alongisde the instances running the old version. If new instances don't pass healthchecks, Elastic Beanstalk terminates them leaving the original instances untouched.
-- Blue/Green deployments allow you to have a separate deployment environment.
+- Blue/Green deployments allow you to have a separate deployment environment. Allow avoidance of downtime. Deploy a new version to separate environments and then swap CNAMEs of two environments to instantly redirect traffic to new version
+- TODO: CHECK CNAME AND OTHER R53 TYPES
 - if you can't find an AMI to run your code, use Packer to create a custom platform which will run it.
 - custom_platform.json is the file for creating a custom platform with Packer
     - *source_ami* is required in a packer template. It is the base operating systems used to create a custom AMI. Could be: amazon linux AI, ubuntu1604, rhel7, rhel6
@@ -25,7 +26,7 @@
 - `docker-compose.yml` file is used to deploy the docker image from a hosted repository to the beanstalk env. No version 1 or 2 associated with the file.
 - Dockerrun.aws.json version 1 file is used to deploy a single docker container to the beanstalk env
 - with traffic splitting deployment, beanstalk will launch a completely new set of instances with new versions in a separate ASG and forward on a certain percentage of traffic to the new version during the evaluation period. The percentage of traffic to be diverted to the new version is specified in 'NewVersionPercent' while evaluation time is specified in the 'EvaluationTime' parameter.
-- 
+- EB CLI provides interactive commands for creating, updating and monitoring envs from a local repo. Use as part of everyday dev and test cycle as alternative to the console.
 
 ## SAM
 
@@ -150,6 +151,15 @@ Addresses 3 core scenarios:
 - *Write Around Cache* is useful when there is a considerable amount of data to be written to the database
 - *Side Cache using Redis* is eventually consistent and non-durable which may add an additional delay
 - *Write Through cache using Redis* means chances of missing data during new scaling out
+- *Write through*: adds data or updates data in cache whenever data is written to the database
+    - data in cache never stale
+    - every write involves two trips, adding latency to process. Users are typically more tolerant of latency when writing
+        1. write to cache
+        2. write to database
+- *Parameter groups*: easy way to manage runtime settings for supported engine software. Used to control memory usage, eviction policies, item sizes, etc. Named collection of engine-specific parameters that can apply to a cluster. Allows ensurance that all nodes in cluster are configured the same.
+- *Endpoint*: unique address applications use to connext to an elasticache node or cluster
+- *Security group*: controls access
+- *Subnet group*: cannot be used to define values in Elasticache
 
 
 ## IAM
@@ -163,7 +173,7 @@ Addresses 3 core scenarios:
     - TODO: what are context keys?
 - IAM policy simulator testing to test resource-based policies requires resources to be included in the simulator and the resource policy needs to be selected for that resource.
 - on-premise should not use IAM Roles
-- GOT TO QUESTION 53
+- security tokens shouldn't be used for development practices, should instead be using temporary security credentials to minimise risk. Assume them using STS.
 
 
 ## RDS
@@ -224,6 +234,10 @@ Addresses 3 core scenarios:
     - configuring index document support
     - permissions required for website access
 - to enable SSE for all objects in a bucket, request should include `x-amz-server-side-encryption` as AES256 request header. Bucket policy can be created to deny all other requests.
+- Multipart API enables uploading of multiple objects in parts. Use this API to upload new large objects or copy existing objects. Upon receiving multipart request, S3 constructs object from uploaded parts. The objects can be accessed from the bucket like any other object. Initial three step process
+    1. initiate the uplod
+    2. upload object parts
+    3. after all parts uploaded, complete multipart
 
 ### CORS
 
@@ -283,7 +297,7 @@ Addresses 3 core scenarios:
 
 ## OpsWorks
 
-- OpsWorks is a configuration management service that provides managed instances of Chef and Puppet. These are automation platforms that allows use of code to aumatomate configurations of servers. OpsWorks allows for automation of how servers re configured, deployed anad managed across EC2 instances or on-premises compute environments
+- OpsWorks is a configuration management service that provides managed instances of Chef and Puppet. These are automation platforms that allows use of code to aumatomate configurations of servers. OpsWorks allows for automation of how servers are configured, deployed anad managed across EC2 instances or on-premise compute environments
 
 ## EC2
 
@@ -329,7 +343,6 @@ Addresses 3 core scenarios:
     2. plaintext data encryption key to encrypt data locally, then erase plaintext key from memory
     3. store encrypted data key alongside locally encrypted data
 
-
 ## Cognito
 
 - Roles can have rules assigned to them. When multiple rules are assigned, rules are evaluated in a sequential order & the IAM role for the first matching rule is used unless a 'CustomRoleArn' attribute is added to modify this sequence.
@@ -365,6 +378,15 @@ Addresses 3 core scenarios:
 
 - migrate a Gut repo to CodeCommit by: cloning, mirroring migrating all or some branches. Can also migrate local unversioned content to CodeCommit
 - can migrate to CodeCommit from other version control systems, but need to migrate to Git first
+
+## Route 53
+
+- *weighted routing* lets you associate multiple resources with a single domain or subdomain name, and choose how much traffic is routed to each resource.
+
+## VPC
+
+- VPC flow logs is a feature that enables capturing of information about the IP traffic to and from network interfaces in VPC
+
 
 ## Other
 
