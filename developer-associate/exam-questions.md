@@ -27,6 +27,15 @@
 - Dockerrun.aws.json version 1 file is used to deploy a single docker container to the beanstalk env
 - with traffic splitting deployment, beanstalk will launch a completely new set of instances with new versions in a separate ASG and forward on a certain percentage of traffic to the new version during the evaluation period. The percentage of traffic to be diverted to the new version is specified in 'NewVersionPercent' while evaluation time is specified in the 'EvaluationTime' parameter.
 - EB CLI provides interactive commands for creating, updating and monitoring envs from a local repo. Use as part of everyday dev and test cycle as alternative to the console.
+- to ensure that RDS data is not lost as the Beanstalk environment is torn down, set the *Retention* field to "Create Snapshot", this will mean that a snapshot is taken prior to termination and it can be recreated later. The database needs to be in the environment for it to matter, but don't do it for production envs since the database lifecycle is tied to the Beanstalk lifecycle. For production, launch the database outside of beanstalk and then point beanstalk applications to it.
+- Beanstalk creates an application version whenever source code is uploaded. Usually occurs when you create an environment or upload and deploy code using the console or CLI. Beanstalk deletes application versions according to lifecycle policy and when you delete the application. Can also upload a source bundle without deploying it. Beanstalk stores source bundles in S3 and doesn't automatically delete them
+- to change config options on a running env. [More info](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/using-features.platform.upgrade.html)
+    1. go to the console
+    2. navigate to the environment management page
+    3. choose *configuration*
+    4. find the config you want to edit
+        - hit *modify* on the option/category you want to change
+        - turn on table view to search for it if required
 
 ## SAM
 
@@ -99,6 +108,9 @@ Addresses 3 core scenarios:
 - to deal with `LambdaThrottledExceptions` while using Cognito Events you need to implement retries on synchronous operations while writing the lambda function
 - minimise deployment package to runtime necessities. For functions in Java and .Net, avoid uploading the entire AWS SDK library. Instead selectively depend on modules which pick up components of the SDK you need.
 - by default, an alias points to a single Lambda version. When the alias is updated to point to a different version incoming request traffic instantly points to the updated version. This exposes that lias to any potential instabilities introduced by the new version. To minimise impact, implement the routing-config parameter of the Lambda alias that allows you to point to two different versionf of the lambda and dictate what percentage of incoming traffic is sent to each.
+- with *Lambda proxy integration*, entire request received from client is sent to backend AWS Lambda function using ANY method. Actual HTTP method is received from the client which can be any of the HTTP methods.
+- TODO: WHAT IS LAMBDA PROXY INTEGRATION??
+- `Routing-Config` parameter of the Lambda alias allows one to point to two different versions of the Lambda function and determine what percentage of incoming traffic is sent to each version. Use percentage values out of 1 (ie, 5% = 0.05) [Read more.](https://docs.aws.amazon.com/lambda/latest/dg/lambda-traffic-shifting-using-aliases.html)
 
 ## CloudFormation
 
@@ -106,10 +118,13 @@ Addresses 3 core scenarios:
 - *handler*: name of the method within a code that Lambda calls to execute the function
 - when launching stacks, install and configure software on EC2 isntances using the `cfn-init` helper script and `AWS::CloudFormation::Init` resource. Using `AWS::CloudFormation::Init` you can describe the configurations you want rather than scripting procedural steps.
 - use the *Parameters* section to take in values at runtime. Then use the values of those parameters to define how the template gets executed. Can be refered to from the Resources and Outputs sections of of the template.
+    - supported types: string, number, list, CommaDelimitedList, AWS-Specific Parameter types, SSM Parameter types
 - *Outputs* section: used to describe the values that are returned whenever you view your stack's properties.
 - *Metadata* section: used to specify objects that provide additional information about the template
 - *Transform* section: used to specify options for the SAM model
-
+- *StackSets* extend the functionality of stacks by enabling creation, updating or deletion of stacks across multiple accounts and regions with a single operation. Using an admin account, define and manage a CloudFormation template and use the template as the basis for provisioning stacks into selected target accounts across specific regions
+- *Nested Stacks* are stacks that are part of other stacks
+- *ChangeSets* are used to make changes to running resources in a stack
 
 ## CodeBuild
 
@@ -133,6 +148,8 @@ Addresses 3 core scenarios:
 - to allow for prioritisation of messages in a queue, create two SQS queues, one with higher priority, then messages can be processed by the application from the high priority queue first.
 - default settings for SQS queues are a 30 second visbility timeout. If the application needs more time for processing, you need to change this.
 - for application polling multiple queues with a single thread: long polling will wait for a message or timeout value for each queue which may delay processing of messages in other queues that have messages to be processed, therefore use *short polling* with default timeout values
+- delay queues let you postpone the delivery of new messages to a queue for several seconds. If you create a delay queue, any messages sent to the queue remain invisible to consumers for the delay period (default & minimum is 0s, max of 15m)
+- to set delay seconds on *individual* messages, use `message timers` to allow SQS to use the message timer's *DelaySeconds* value instead of the delay queue's
 
 ### FIFO SQS
 
@@ -172,7 +189,7 @@ Addresses 3 core scenarios:
     2. simulate the policies, providing a list of actions, resources and context keys that are used during the simulation
     - TODO: what are context keys?
 - IAM policy simulator testing to test resource-based policies requires resources to be included in the simulator and the resource policy needs to be selected for that resource.
-- on-premise should not use IAM Roles
+- *on-premise should not use IAM Roles/instance profiles* [more info](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2_instance-profiles.html) [about what is](https://docs.aws.amazon.com/en_pv/codedeploy/latest/userguide/instances-ec2-configure.html) [needed for on prem](https://docs.aws.amazon.com/codedeploy/latest/userguide/tutorials-on-premises-instance.html)
 - security tokens shouldn't be used for development practices, should instead be using temporary security credentials to minimise risk. Assume them using STS.
 
 
@@ -214,6 +231,8 @@ Addresses 3 core scenarios:
     - *evaluation period*: number of most recent data points to evaluate when determining alarm state
     - *datapoints to alarm*: number of data points within the evaluation  period that must be breached to cause the alarm to go into the *ALARM* state. Breaching data points do not have to be consecutive. All must be within the last number of data points equal to the evaluation period.
 - install the CloudWatch agent on the machine and then configure it to send the web server's logs to a central location in CloudWatch
+- using existing `PutMetricData API`, can publish Custom Metrics to a 1 second resolution. More immediate visibility and greater granularity into the state and performance of custom applications, like short lived spikes and functions. Can alert sooner with High-Res alarms, frequently as 10 second periods, which allow you to react and take action faster and support the same actions available with standard 1min alarms. Add these metrics alarms and widgets to dashboard for easy observability of critical components. 
+- Detailed monitoring is only pertinant for existing services available in AWS
 
 ## S3 (3 = simple storage service)
 
@@ -239,6 +258,10 @@ Addresses 3 core scenarios:
     2. upload object parts
     3. after all parts uploaded, complete multipart
 
+### S3 Inventory
+
+- if you notice a significant increase in the number of HTTP 503-slow down responses received for Amazon S3 PUT or DELETE object requests to a bucket that has versioning enabled, you might have one or more objects in the bucket for which there are millions of versions. When you have objects with millions of versions, S3 automatically throttles requests to the bucket to protext the customer from an excessive amount of request traffic, which could potentially impede other requests made to the same bucket. To determine which S3 objects have millions of version, use S3 Inventory. It generates a report that provides a flat file list of the objects in a bucket
+
 ### CORS
 
 - use CORS to get information from between S3 buckets. Using bucket policies opens up access to the entire bucket which is sub-optimal
@@ -262,13 +285,20 @@ Addresses 3 core scenarios:
 
 ## EBS
 
+- local block storage for EC2 instances
 - encryption needs to be enabled at volume creation time
+
+## Elastic File Store
+
+- create network file systems that can be mounted by instances across multiple availability zones. An EFS is an AWS resource that sues security groups to control access over the network in your default or custom VPC.
+- in Elastic Beanstalk envs, use EFS to create a shared directory that stores files uploaded or modified by users of the application. The application can treat a mounted EFS volume like local storage. Don't have to change application code to scale up to multiple instances
 
 ## CodeStar
 
 - service for creating, managing and working with software development projects on AWS. Creates and integrates AWS service for project development toolchains. Also manages permissions required for project users. 
 - basically handles the development process side of things
 - service accelerates release with help of CodePipeline. Each project comes pre-configured with an automated pipeline that continuously builds, tests, and deploy code with each commit.
+- to quickly build and deploy applications onn EC2 instances using Ruby, CodeStar project templates can be used. Pre-configured delivery toolchains for developing, building, testing and deploying projects on AWS. Project templates support development of applications on various AWS services (eg. EC2, Elastic Beanstalk, Lambda) and various languages (eg. Java, JS, PHP, Ruby, Python). Provide built-in security access policies to control access to team working on new applications
 
 ## CodeDeploy
 
@@ -310,11 +340,16 @@ Addresses 3 core scenarios:
     3. define which API actions and resources the application can use after assuming the role
     4. specify the role when you launch your instance, or attach the role to a running or stopped instance
     5. have the application retrieve a set of temporary credentials and use them
+- instance types
+    - with M5 General-Purpose instance, Elastic Network Adapter is used to support Enhance Networking. M5 GP also supports network performance with 10Gbps to 25 Gbps based upon instance type. T2 does not support Enhance Networking and only supports network performance to 1Gbps
+    - TODO: what is Intel 82599 Virtual Function interface?
 
 ## X-Ray
 
 - `~/xray-daemon$./xray -o` command option can be used while running the X-Ray daemon locally and not on the EC2 instance. Will then skip checking EC2 instance metadata
 - [info on configuring AWS X-Ray daemon](https://docs.aws.amazon.com/xray/latest/devguide/xray-daemon-configuration.html)
+- on ECS, create a docker image that runs the X-Ray daemon, upload it to a docker image repository, then deploy to an ECS cluster. Use port mappings and network mode settings in task definition files to allow the application to communicate with the daemon container.
+- with Default Sampling Rule, X-Ray records are one request per second, and 5% of any additional requests per host
 
 ## Kinesis
 
@@ -348,6 +383,11 @@ Addresses 3 core scenarios:
 - Roles can have rules assigned to them. When multiple rules are assigned, rules are evaluated in a sequential order & the IAM role for the first matching rule is used unless a 'CustomRoleArn' attribute is added to modify this sequence.
 - Cognito with MFA allows MFA be required with a User Pool
 - supports authentication with identity providers through SAML (security assertion markup language 2.0). Identity provider supporting SAML specifies IAM roles that can be assumed by users to different users can be granted different sets of permissions
+- User gets authenticated by SAML-based 3rd party identity prodiver and gets a token. Cognito Identity pool provides credentials based on these tokens. Applications cam access AWS services using these creds. When using on-premises, the user will be authenticated by on-prem servers. Tokens provided by on-prem servers will be exchanged with Cognito identity pool to get AWS credentials, which are then used to access AWS services.
+- Cognito `User pool` is for sign-in access for users to web applications, not to grant user access to AWS services
+- Cognito `Identity pool` is to grant users access to AWS services
+- federated identity providers are Amazon, Google, etc. Not on-prem.
+- `ĀssumeRoleWithWebIdentity`: returns a set of temporary security credentials for users who have been authenticated in a mobile or web app with a web identity provider.
 
 ## STS
 
