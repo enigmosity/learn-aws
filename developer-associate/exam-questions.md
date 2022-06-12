@@ -15,7 +15,8 @@
 - *immutable deployments*: launch a full set of new instances running the new version of the application in a separate ASG, alongisde the instances running the old version. If new instances don't pass healthchecks, Elastic Beanstalk terminates them leaving the original instances untouched.
 - Blue/Green deployments allow you to have a separate deployment environment. Allow avoidance of downtime. Deploy a new version to separate environments and then swap CNAMEs of two environments to instantly redirect traffic to new version
 - TODO: CHECK CNAME AND OTHER R53 TYPES
-- if you can't find an AMI to run your code, use Packer to create a custom platform which will run it.
+- if you can't find an AMI to run your code, use Packer to create a custom platform which will run it. TODO: what is the difference between a custom AMI and a custom platform?
+- custom AMIs can improve provisioning times when instances are launched in your environment if you need to install a lot of software not in standard AMIs. Configuration files are great (.ebextensions), but can be slow and take a long time during environment creation and update. AMI is faster.
 - custom_platform.json is the file for creating a custom platform with Packer
     - *source_ami* is required in a packer template. It is the base operating systems used to create a custom AMI. Could be: amazon linux AI, ubuntu1604, rhel7, rhel6
     - the region id required in a packer template and should be the same as the region from which the AMI of the EC2 instance is copied.
@@ -30,12 +31,14 @@
 - to ensure that RDS data is not lost as the Beanstalk environment is torn down, set the *Retention* field to "Create Snapshot", this will mean that a snapshot is taken prior to termination and it can be recreated later. The database needs to be in the environment for it to matter, but don't do it for production envs since the database lifecycle is tied to the Beanstalk lifecycle. For production, launch the database outside of beanstalk and then point beanstalk applications to it.
 - Beanstalk creates an application version whenever source code is uploaded. Usually occurs when you create an environment or upload and deploy code using the console or CLI. Beanstalk deletes application versions according to lifecycle policy and when you delete the application. Can also upload a source bundle without deploying it. Beanstalk stores source bundles in S3 and doesn't automatically delete them
 - to change config options on a running env. [More info](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/using-features.platform.upgrade.html)
-    1. go to the console
+    1. *go to the console*
     2. navigate to the environment management page
     3. choose *configuration*
     4. find the config you want to edit
         - hit *modify* on the option/category you want to change
         - turn on table view to search for it if required
+- Beanstalk ASG manages environment instances, and the launch configuration of the instances. Modify the launch configuration to change instance type, key pair, EBS storage and other settings that can only be configured at instance launch. Include a YAML env manifest in root of application source bundle to configure environment name, solution stack and [environment links](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/environment-cfg-links.html) to use when creating the environment. An env manifest uses that same format as [saved configurations](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/environment-configuration-savedconfig.html)
+- 
 
 ## SAM
 
@@ -50,8 +53,8 @@
 
 - does not support versioning
 - when scanning a DynamoDB table, minimise the impact of a scan on a table's provisioned throughput by *reducing page size*. A larger number of requests for smaller data sets allows other requests to succeed without throttling. Parallel scans may consume all provisioned capacity if there are many workers.
-- to handle throttling due to a surge in requests, use exponential backoff to retry requests, alternateively increase the throughput on the table (WCU &RCU!!!)
-- a *query* operation does not return data on how much read capacity it consumes. Use the *ReturnsConsumedCapacity* parameter to do so. Options are:
+- to handle throttling due to a surge in requests, use exponential backoff to retry requests, alternatively increase the throughput on the table (WCU & RCU!!!)
+- by default a *query* operation does not return data on how much read capacity it consumes. Use the *ReturnsConsumedCapacity* parameter to do so. Options are:
     - NONE - no data returned
     - TOTAL - include aggregate number of read capacity units consumed
     - INDEXES - include agregate number of read capacity units consumed, with the consumed capacity for each table the index accessed.
@@ -83,6 +86,8 @@
 - encryption is mandatory at time of table creation and is of two types
     1. DEFAULT method using 'AWS owned key'
     2. KMS method using 'AWS managed key'
+- Dynamo streams allow Lambda functions to trigger on database modifications. Enable streams, associate the stream ARN with a Lambda function, and immediately after the table is modified, a record appears in the stream. Lambda polls the stream for records and invokes synchronously.
+- *BatchGetItem* API allows you to pass multiple partitions key values in a single request, so you can then query for multiple items at once
 
 ### DAX
 
@@ -111,6 +116,7 @@ Addresses 3 core scenarios:
 - with *Lambda proxy integration*, entire request received from client is sent to backend AWS Lambda function using ANY method. Actual HTTP method is received from the client which can be any of the HTTP methods.
 - TODO: WHAT IS LAMBDA PROXY INTEGRATION??
 - `Routing-Config` parameter of the Lambda alias allows one to point to two different versions of the Lambda function and determine what percentage of incoming traffic is sent to each version. Use percentage values out of 1 (ie, 5% = 0.05) [Read more.](https://docs.aws.amazon.com/lambda/latest/dg/lambda-traffic-shifting-using-aliases.html)
+- only pay for the compute time you consume, no charge when not running. administrative headache is minimised by AWS handling the infrastructure, spin up and spin down etc.
 
 ## CloudFormation
 
@@ -135,8 +141,8 @@ Addresses 3 core scenarios:
 
 ## Step Functions
 - require timeouts as without the functions relies on a response from an activity worker to know a task is complete, without a response, it will wait forever.
-- executions that pass large payloads between states can be terminated, use Simple Storage Service to deal with this.
-- states can have multiple incoming transitions
+- executions that pass large payloads between states can be terminated. If data over 32KB use S3 and pass the ARN of the raw data instead. Alternatively, adjust implementation to pass smaller payloads.
+- states can have multiple incoming transitions from other states
 
 ## Data Pipeline
 
@@ -155,6 +161,10 @@ Addresses 3 core scenarios:
 
 - *existing standard queues cannot be converted into FIFO queues.*
 - designed to enhance messaging between applications when order of operations and events is critical or where duplicates can't be tolerated
+
+## SNS
+
+- SNS supports the delivery of message attributes which let you provide structured metadata items (timestamps, geospatial data, signatures, identifiers, etc) about the message, each message can have up to 10 attributes.
 
 ## ElastiCache
 
@@ -191,6 +201,7 @@ Addresses 3 core scenarios:
 - IAM policy simulator testing to test resource-based policies requires resources to be included in the simulator and the resource policy needs to be selected for that resource.
 - *on-premise should not use IAM Roles/instance profiles* [more info](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2_instance-profiles.html) [about what is](https://docs.aws.amazon.com/en_pv/codedeploy/latest/userguide/instances-ec2-configure.html) [needed for on prem](https://docs.aws.amazon.com/codedeploy/latest/userguide/tutorials-on-premises-instance.html)
 - security tokens shouldn't be used for development practices, should instead be using temporary security credentials to minimise risk. Assume them using STS.
+- *Access Keys*: consist of an access key ID and a secret access key, used to sign programmatic requests made to aws using SDKs, REST or Query API operations
 
 
 ## RDS
@@ -223,6 +234,14 @@ Addresses 3 core scenarios:
 - canary deployments have their own logs and metrics generated, which can be viewed as part of a production CloudWatch Logs group, and a canary CloudWatch Logs group. Same applies to access logging.
 - while enabling CORS resources on API Gateway for all responses apart from 200 responses of the OPTIONS method, need to manually configure to return Access-Control-Allow-Origin header with '*' or specific origins to fulfill pre-flight handshakes.
 - if API Gateway fails to process an incoming request, it returns the client an error response without forwarding the request to the integration backend. By default, the error response contains a short descriptive error message. For some error responses, API Gateway allows customisation by API developers to return the responses in different formats. 
+- supports multiple mechanisms for controlling API access
+    - resource policies let you create resource-based policies to allow or deny access to APIs and methods from specified IP addresses or VPC endpoints
+    - standard IAM roles and policies offer flexible and robust acces controls that can be applied to an entire API or individual methods
+    - CORS lets you control how API responds to cross-domain resource requests
+    - *lambda authorizers* are lambda functions that control access to AI methods using bearer token authentication as well as info described by headers, paths, query strings, stage variables or context variables request parameters.
+    - Cognito user pools create customisable authentication and authorisation solutions
+    - client-side SSL certs can be used to verify that HTTP requests to backend systems are from API Gateway
+    - usage plans let you provide API keys to customers, then track and limit the usage of API stages and methods for each API key
 
 ## CloudWatch
 
@@ -257,16 +276,19 @@ Addresses 3 core scenarios:
     1. initiate the uplod
     2. upload object parts
     3. after all parts uploaded, complete multipart
+- when using CloudFormation, ensure that all objects in the bucket are deleted before deleting the S3 bucket using the *DeletionPolicy* of the CloudFormation template. Default *DeletionPolicy* is **Delete**.
 
 ### S3 Inventory
 
-- if you notice a significant increase in the number of HTTP 503-slow down responses received for Amazon S3 PUT or DELETE object requests to a bucket that has versioning enabled, you might have one or more objects in the bucket for which there are millions of versions. When you have objects with millions of versions, S3 automatically throttles requests to the bucket to protext the customer from an excessive amount of request traffic, which could potentially impede other requests made to the same bucket. To determine which S3 objects have millions of version, use S3 Inventory. It generates a report that provides a flat file list of the objects in a bucket
+- if you notice a significant increase in the number of HTTP 503-slow down responses received for Amazon S3 PUT or DELETE object requests to a bucket that has versioning enabled, you might have one or more objects in the bucket for which there are millions of versions. When you have objects with millions of versions, S3 automatically throttles requests to the bucket to protext the customer from an excessive amount of request traffic, which could potentially impede other requests made to the same bucket. *To determine which S3 objects have millions of version, use S3 Inventory. It generates a report that provides a flat file list of the objects in a bucket*
 
 ### CORS
 
 - use CORS to get information from between S3 buckets. Using bucket policies opens up access to the entire bucket which is sub-optimal
 - if you're using the fully qualified domain name for a bucket, you're leaving the initial origin and CORS needs to be enabled.
 - if you're making a request to outside of an APIs own domain, you also need to enables CORS
+- in config, can specify values for which methods are allowed using the *AllowedMethod* element
+    - GET, PUT, POST, DELETE, HEAD
 
 ## Envelope Encryption
 
@@ -320,6 +342,7 @@ Addresses 3 core scenarios:
 - ALBs allow containers to use dynamic host port mapping so that multiple tasks from the same service are allowed per container instance
 - ALBs support path-based routing and priority rules so that multiple services can use the same listener port on a single ALB
 - NLBs do not support dynamic host port mapping
+- 
 
 ## ECR
 
@@ -360,6 +383,7 @@ Addresses 3 core scenarios:
 - expects you to call PutRecord API to write serially to a shard while using the `sequenceNumberForOrdering` parameters. This parameter guarantees strictly increasing of sequence numbers for puts from same client and to same partition key.
 - use server-side encryption for data encryption at rest with an AWS KMS CMK. Encrypted before written to the stream storage layer and decrypted after retrieval.
 - can select either an existing kinesis stream or create a new one to have Cognito Streams push all sync data to streams.
+- shard throughput capacity: 1MB/sec/shard of data input, and 1000 PUT records/sec/shard
 
 ### Kinesis data firehose
 
@@ -416,12 +440,16 @@ Addresses 3 core scenarios:
 
 ## CodeCommit
 
-- migrate a Gut repo to CodeCommit by: cloning, mirroring migrating all or some branches. Can also migrate local unversioned content to CodeCommit
+- migrate a Git repo to CodeCommit by: cloning, mirroring migrating all or some branches. Can also migrate local unversioned content to CodeCommit
 - can migrate to CodeCommit from other version control systems, but need to migrate to Git first
+- HTTPS connections require Git creds which IAM users can generate themselves in IAM, or an AWS access key. Repository users must configure credential helper included in AWS CLI. Root or federated users must use HTTPS.  Git creds are easiest for repo setup and use. 
+    - SSH connections require users to generate a public-privte key pair, store the public key, associate the public key with their IAM user, config known hosts file on local and create and maintain a config file on local machines. More complex that HTTPS and git creds.
+    - HTTPS auth method: static username and password. works with all OS supported by CodeCommit. Compatible with IDEs and other dev tolls supporting git creds
 
 ## Route 53
 
 - *weighted routing* lets you associate multiple resources with a single domain or subdomain name, and choose how much traffic is routed to each resource.
+    - when combined with an ELB, you can progressibly scale the weighted routing over time, so that more customers are served the new version after initial testing.
 
 ## VPC
 
@@ -443,3 +471,14 @@ Addresses 3 core scenarios:
         4. *Default credential profiles file* - typically located at ~/.aws/credentials and shared by many AWS SDKs and CLIs.
         5. *ECS container credentials* - loaded form ECS if the environment variable AWS_CONTAINER_CREDENTIALS_RELATIVE_URI is set
         7. *Instance profile credentials* - used on EC2 instances and delivered through EC2 metadata service
+- Fault Injection Simulator
+    - FIS experiment templates consist of 
+        1. action set
+        2. targets
+        3. stop conditions
+        - resources can be specified in targets using the following components
+            - resource IDs
+            - resource tags
+            - resource filters
+    - to specify resources, paths and values can be specified in resource filters components.
+    - TODO: have a skim of this service to ensure you understand how to apply tags and IDs as well as the action set 
