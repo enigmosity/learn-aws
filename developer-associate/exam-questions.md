@@ -38,7 +38,7 @@
         - hit *modify* on the option/category you want to change
         - turn on table view to search for it if required
 - Beanstalk ASG manages environment instances, and the launch configuration of the instances. Modify the launch configuration to change instance type, key pair, EBS storage and other settings that can only be configured at instance launch. Include a YAML env manifest in root of application source bundle to configure environment name, solution stack and [environment links](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/environment-cfg-links.html) to use when creating the environment. An env manifest uses that same format as [saved configurations](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/environment-configuration-savedconfig.html)
-- 
+- Beanstalk supports deployment of web applications from Docker containers. With Docker containers, can define your own runtime environment, choose platform, programming language and any dependencies that aren't supported by other platforms. Containers are self-contained and include all the config information and software the web application requires to run
 
 ## SAM
 
@@ -88,6 +88,7 @@
     2. KMS method using 'AWS managed key'
 - Dynamo streams allow Lambda functions to trigger on database modifications. Enable streams, associate the stream ARN with a Lambda function, and immediately after the table is modified, a record appears in the stream. Lambda polls the stream for records and invokes synchronously.
 - *BatchGetItem* API allows you to pass multiple partitions key values in a single request, so you can then query for multiple items at once
+- *HTTP 400 indicates problem with the request* (authentication failure, missing required parameters, or exceeding a table's provisioned throughput). Will have to resolve issue in application, and resubmit to DynamoDB
 
 ### DAX
 
@@ -147,6 +148,7 @@ Addresses 3 core scenarios:
 ## Data Pipeline
 
 - web service that you can use to automate data movement and transformation. Define data driven workflows so tasks can depend on successful completion of previous tasks.
+- define parameters of data transformations, and Data Pipeline enfores the logic.
 
 ## SQS
 
@@ -202,7 +204,7 @@ Addresses 3 core scenarios:
 - *on-premise should not use IAM Roles/instance profiles* [more info](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2_instance-profiles.html) [about what is](https://docs.aws.amazon.com/en_pv/codedeploy/latest/userguide/instances-ec2-configure.html) [needed for on prem](https://docs.aws.amazon.com/codedeploy/latest/userguide/tutorials-on-premises-instance.html)
 - security tokens shouldn't be used for development practices, should instead be using temporary security credentials to minimise risk. Assume them using STS.
 - *Access Keys*: consist of an access key ID and a secret access key, used to sign programmatic requests made to aws using SDKs, REST or Query API operations
-
+- TODO: [Creating roles with external ID's](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
 
 ## RDS
 
@@ -252,6 +254,11 @@ Addresses 3 core scenarios:
 - install the CloudWatch agent on the machine and then configure it to send the web server's logs to a central location in CloudWatch
 - using existing `PutMetricData API`, can publish Custom Metrics to a 1 second resolution. More immediate visibility and greater granularity into the state and performance of custom applications, like short lived spikes and functions. Can alert sooner with High-Res alarms, frequently as 10 second periods, which allow you to react and take action faster and support the same actions available with standard 1min alarms. Add these metrics alarms and widgets to dashboard for easy observability of critical components. 
 - Detailed monitoring is only pertinant for existing services available in AWS
+- unified CloudWatch agent enables:
+    - collection of more system-level metrics from EC2 instances, including in-quest metrics, in addition to metrics listed in EC2 Metrics and Dimensions. Additional metrics are listed 'Metric Collected by the CloudWatch Agent'.
+        - TODO: what are EC2 metrics and Dimensions?
+    - collect system-level metrics from on-premise servers. Can include servers in hybrid environments as well as servers not managed by AWS
+    - collect logs from EC2 instances and on-premise servers running Windows Server or Linux.
 
 ## S3 (3 = simple storage service)
 
@@ -366,6 +373,12 @@ Addresses 3 core scenarios:
 - instance types
     - with M5 General-Purpose instance, Elastic Network Adapter is used to support Enhance Networking. M5 GP also supports network performance with 10Gbps to 25 Gbps based upon instance type. T2 does not support Enhance Networking and only supports network performance to 1Gbps
     - TODO: what is Intel 82599 Virtual Function interface?
+- instance types
+    - M5: general purpose instance
+    - Mac: apple system, suitable for applications that require XCode
+    - C5: compute optimized instances
+    - R5: memory optimized instances
+    - TODO: make sure you understand the differences between [EC2 instance types](https://aws.amazon.com/ec2/instance-types/)
 
 ## X-Ray
 
@@ -373,6 +386,9 @@ Addresses 3 core scenarios:
 - [info on configuring AWS X-Ray daemon](https://docs.aws.amazon.com/xray/latest/devguide/xray-daemon-configuration.html)
 - on ECS, create a docker image that runs the X-Ray daemon, upload it to a docker image repository, then deploy to an ECS cluster. Use port mappings and network mode settings in task definition files to allow the application to communicate with the daemon container.
 - with Default Sampling Rule, X-Ray records are one request per second, and 5% of any additional requests per host
+- TODO: [read more about sampling](https://docs.aws.amazon.com/xray/latest/devguide/xray-api-sampling.html)
+    - Resevoir rate + fixed rate
+    - number = total requests - resevoir rate, take the fixed rate % from the number
 
 ## Kinesis
 
