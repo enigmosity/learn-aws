@@ -13,7 +13,7 @@
 - there are two methods to save configuration options settings. Config files in YAML or JSON can be included in application's source code in the `.ebextensions` and deployed as part of application source bundle. 
 - if you want to deploy a worker application that processes periodic background tasks, application source bundle must also include a cron.yaml file
 - *immutable deployments*: launch a full set of new instances running the new version of the application in a separate ASG, alongisde the instances running the old version. If new instances don't pass healthchecks, Elastic Beanstalk terminates them leaving the original instances untouched.
-- Blue/Green deployments allow you to have a separate deployment environment. Allow avoidance of downtime. Deploy a new version to separate environments and then swap CNAMEs of two environments to instantly redirect traffic to new version
+- Blue/Green deployments allow you to have a separate deployment environment. Allow avoidance of downtime. Deploy a new version to separate environments and then swap CNAMEs (called swap environment URLs) of two environments to instantly redirect traffic to new version. Need to create a new environment (can clone current) to do this.
 - TODO: CHECK CNAME AND OTHER R53 TYPES
 - if you can't find an AMI to run your code, use Packer to create a custom platform which will run it. TODO: what is the difference between a custom AMI and a custom platform?
 - custom AMIs can improve provisioning times when instances are launched in your environment if you need to install a lot of software not in standard AMIs. Configuration files are great (.ebextensions), but can be slow and take a long time during environment creation and update. AMI is faster.
@@ -90,6 +90,11 @@
 - *BatchGetItem* API allows you to pass multiple partitions key values in a single request, so you can then query for multiple items at once
 - *HTTP 400 indicates problem with the request* (authentication failure, missing required parameters, or exceeding a table's provisioned throughput). Will have to resolve issue in application, and resubmit to DynamoDB
 - TODO: [understand how to write to a table using the CLI](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithTables.Basics.html)
+- not to be used to table joins
+- best practices for defining secondary indexes:
+    - consider projecting fewer attributes to minimise the size of items written to the index. This only applies if the soze of projected attributes would otherwise be larger than a single WCU (1KB)
+    - avoid projecting variables that you know will rarely be needed in queries
+    - specify ALL only if you want queries to return the entire table items sorted by a different key. Projecting all attributes eliminates the need for table fetches, but in most cases doubles storage costs and write activity
 
 ### DAX
 
@@ -123,7 +128,15 @@ Addresses 3 core scenarios:
 - Lambda `Catch code` is only used after function performs several retries - `ErrorEquals` and `Next` are required strings.
 - Lambda and ECS support blue/green deployments, not in place
 - use Cloudwatch events to set up lambda functions to run on a schedule, finest resolution using a cron expression is a minute. Might be seconds in delay between event and the lambda running. Triggered within the minute, but not exactly on the zero second.
-
+- Lambda limits compute and storage resources used to run and store function. Limits apply per-region and can be increased using the support centre console
+    - concurrent executions: 1000 default limit
+    - function and layer storage: 75 GB default limit
+- can run docker containers
+- lifecycle event hooks:
+    - *BeforeAllowTraffic*: hooks to run tasks before shifting traffic to the new Lambda function version
+    - *AfterAllowTraffic*: hooks to run tasks after shiting traffic to the new Lambda version
+    - Start, AllowTraffic & end cannot be scripted
+- recommended to separate lambda handler from core logic to make function clean and unit-testable
 
 ## CloudFormation
 
@@ -138,6 +151,7 @@ Addresses 3 core scenarios:
 - *StackSets* extend the functionality of stacks by enabling creation, updating or deletion of stacks across multiple accounts and regions with a single operation. Using an admin account, define and manage a CloudFormation template and use the template as the basis for provisioning stacks into selected target accounts across specific regions
 - *Nested Stacks* are stacks that are part of other stacks
 - *ChangeSets* are used to make changes to running resources in a stack
+- optional *Conditions* section contains statements that define the circumstances under which entities are created or configured, only creating specific resources/outputs or setting specific property values if conditions are true, if false setting different values or creating other resources. Common use case is for different environment names
 
 ## CodeBuild
 
@@ -159,6 +173,11 @@ Addresses 3 core scenarios:
 
 - web service that you can use to automate data movement and transformation. Define data driven workflows so tasks can depend on successful completion of previous tasks.
 - define parameters of data transformations, and Data Pipeline enfores the logic.
+- a *data node* defines the location and type of data that a pipeline activity uses as input or output. Types of data node:
+    - DynamoDBDataNote: dynamo table contains data for HiveActivity or EmrActivity to use
+    - SQLDataNode: sql table and database query that represent data for a pipeline activity to use
+    - RedshiftDataNode: redshift table that contains data for RedshiftCopyActivity to use
+    - S3DataNode: S3 location that contains one or more files for a pipeline activity to use
 
 ## SQS
 
@@ -177,6 +196,7 @@ Addresses 3 core scenarios:
 ## SNS
 
 - SNS supports the delivery of message attributes which let you provide structured metadata items (timestamps, geospatial data, signatures, identifiers, etc) about the message, each message can have up to 10 attributes.
+- by default a subscriber of an SNS topic receives every message published to the topic. *A subscriber assigns a filter policy to the topic subscription to receive only a subset of messages*. A filter policy is a simple JSON object. It contains attributes that define which messages the subscriber receives. When a message is published to a topic, SNS compares the message attributes to the attributes in the filter policy for each of the topic's subscriptions. If a match between attributes, SNS send the message to the subscriber, otherwise SNS skips the subscriber without sending anything. If a subscription lacks a filter policy, the subscription receives every message published to its topic
 
 ## ElastiCache
 
@@ -216,15 +236,20 @@ Addresses 3 core scenarios:
 - *Access Keys*: consist of an access key ID and a secret access key, used to sign programmatic requests made to aws using SDKs, REST or Query API operations
 - TODO: [Creating roles with external ID's](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
 - customer managed policies allow access to resources, they have versions, which you can revert/rollback to as required.
+- IAM roles give services/account ability to interact with other services. *If a service needs to interact with another service, give it a role!*
+- trust policies give other roles/services the ability to assume a role
 
 ## RDS
 
-- RDS supports using TDE (Transparent Data Encryption) to encryt stored data on DB instances running Microsoft SQL Server. TDE automatically encrypts data before it is written to storage and automatically decrypts data when the data is read from storage. To enable TDE for a DB instance running SQL Server, specify the TDE option in an RDS option group associated with that DB instance.
+- RDS supports using TDE (Transparent Data Encryption) to encrypt stored data on DB instances running Microsoft SQL Server. TDE automatically encrypts data before it is written to storage and automatically decrypts data when the data is read from storage. To enable TDE for a DB instance running SQL Server, specify the TDE option in an RDS option group associated with that DB instance.
 - web service that makes it easier to set up, operate and scale a relational database in the cloud. Provides cost-efficient, resizable capacity for an industry-standard relational database and manages common database administration tasks. 
 - contains several log types
     - *error log*: diagnostic messages generated by database engine, along with startup and shutdown times
     - *general query log*: a record of all SQL statements received from clients and client connect and disconnect times
     - *slow query log*: record of SQL statements that took longer to execute than a set amount of time and that examined more than a defined number of rows - thresholds are configurable
+- connect to an RDS instance using endpoints, not IP addresses
+    - the DescribeDbInstances API and get the endpoint of the database instance
+    - Request an endpoint for the instance
 
 ## API Gateway
 
@@ -262,6 +287,7 @@ Addresses 3 core scenarios:
     - usage plans let you provide API keys to customers, then track and limit the usage of API stages and methods for each API key
 - control Gateway API method access with IAM *policies*, *roles* and *resource* *policies*
 - `Aws_Proxy` can be used for an API method to be integrated with a Lambda where incoming requests from the clients are passed as input to the Lambda.
+- to deploy an API, create an API deployment and associate it with a stage. Each stage is a snapshot of the API and is made available for the client to call. Stages enable robust version control of APIs. For each stage, optimise API performance by adjusting the default account-level request throttling limits and enabling API caching. In addition, can override stage-level settings for individual methods and define stage varaibles to pass stage-specific environment contexts to the API integration at runtime. *Every time you update an API, which includes modifications of methods, integrations, authorisers, and anything else other than stage settings, you must redploy the API to an existing or new stage.*
 
 ## CloudWatch
 
@@ -303,6 +329,8 @@ Addresses 3 core scenarios:
     3. after all parts uploaded, complete multipart
 - when using CloudFormation, ensure that all objects in the bucket are deleted before deleting the S3 bucket using the *DeletionPolicy* of the CloudFormation template. Default *DeletionPolicy* is **Delete**.
 - *provides 3500 PUT requests/second/prefix in a bucket, 5500 GET requests/sec/prefix in a bucket*.
+- invoke a lambda with S3 events and pass event data as a parameter, enabling the response to S3 bucket changes. SQS doesn't in itself allow you to do anything, you need more consumers.
+- to host a static website, configure an S3 bucket for website hosting and then upload content to the bucket. bucket must have public read access. It is intentinoal that everyone in the world will have read access to this bucket.
 
 ### S3 Inventory
 
@@ -361,6 +389,11 @@ Addresses 3 core scenarios:
     2. linear: traffic shifted in equal increments with an equal number of minutes between each increment.
     3. all-at-once
 - appspec.yml is used to specify how to deploy an application to instances in a deployment group or which lambda dunction version to deploy. Specific to CodeDeploy
+- when deploying EC2 instance
+    - timeout parameter in AfterInstall event for hooks has a default clue of 3600s. Define a timeout value in the afterinstall hook to change it
+    - afterinstall hook is supported with in-place deployment and blue/green in case of replacement instances
+    - directory for storing scripts to be executed in hooks should be at root level of the EC2 instance.
+    - 'runas is an optional parameter in the hooks section
 
 ## ELB
 
@@ -400,6 +433,11 @@ Addresses 3 core scenarios:
     - TODO: make sure you understand the differences between [EC2 instance types](https://aws.amazon.com/ec2/instance-types/)
 - supports in place deployment for EC2 and on-premise, Lambda and ECS only support blue/green deployments
 
+## Auto Scaling Groups
+
+- with target tracking scaling policies, select a predefined metric or configure a custom metric and set a target value. Application auto scaling creates and manages CloudWatch alarms that trigger the scaling policy and calculates the scaling adjustment based on the metric and the target value. The scaling policy adds or remoces capacity as required to keep the metric at or close to the specified target value. In addition to keeping the metric close to the target value, a target tracking scaling policy also adjusts to changes in the metric due to a changing load pattern. It minimises changes to the capacity of the scalable target. Since you can define a custom metric based on concurrent usage, can scale the ASG based on that.
+
+
 ## X-Ray
 
 - `~/xray-daemon$./xray -o` command option can be used while running the X-Ray daemon locally and not on the EC2 instance. Will then skip checking EC2 instance metadata
@@ -432,6 +470,16 @@ Addresses 3 core scenarios:
 - use server-side encryption for data encryption at rest with an AWS KMS CMK. Encrypted before written to the stream storage layer and decrypted after retrieval.
 - can select either an existing kinesis stream or create a new one to have Cognito Streams push all sync data to streams.
 - shard throughput capacity: 1MB/sec/shard of data input, and 1000 PUT records/sec/shard
+- before creating a stream, need to determine initial size. After creation can dynamically scale up or down using the console for `UpdateShardCount` API. To determine initial size you need:
+    - average size of the data record written to the stream in KB, rounded to the nearest 1KB, the data size - `average_data_size_in_KB`
+    - number of data records written to and read from the stream/second - `records_per_second`
+    - number of Kinesis Data Streams applications that consume data concurrently and independently from the stream, the consumers - `number_of_consumers`
+    - incoming write bandwidth in KB - `incoming_write_bandwidth_in_KB`, which is equal to the `average_data_size_in_KB` X `records_per_second`
+    - outgoing read bandwidth in KB - `outgoing_read_bandwidth_in_KB` which is equal to the `incoming_write_bandwidth_in_KB` X `number_of_consumers`
+    - calculate initial shards - `number_of_shards` using:
+        `number_of_shards = max(incoming_write_bandwidth_in_KB/1024, outgoing_read_bandwidth_in_KB/2048)`
+    - [read more](https://github.com/awsdocs/amazon-kinesis-data-streams-developer-guide/blob/master/doc_source/amazon-kinesis-streams.md)
+    - TODO: ensure you understand the above formulas
 
 ### Kinesis data firehose
 
@@ -449,6 +497,7 @@ Addresses 3 core scenarios:
     1. GenerateDataKey to get a data encryption key
     2. plaintext data encryption key to encrypt data locally, then erase plaintext key from memory
     3. store encrypted data key alongside locally encrypted data
+- unless using customer provided keys, the keys are managed by AWS!
 
 ## Cognito
 
@@ -460,6 +509,7 @@ Addresses 3 core scenarios:
 - Cognito `Identity pool` is to grant users access to AWS services
 - federated identity providers are Amazon, Google, etc. Not on-prem.
 - `ĀssumeRoleWithWebIdentity`: returns a set of temporary security credentials for users who have been authenticated in a mobile or web app with a web identity provider.
+- Cognito can detect if a user's creds have been compromised elsewhere. Use *Advanced Security* in console to choose whether to `allow` or `block use` if compromised details are detected. If allow, all attempted uses of comprmised creds are publised to CloudWatch
 
 ### Cognito Sync
 
@@ -484,9 +534,7 @@ Addresses 3 core scenarios:
     - can provision EC2 resources as Dedicated Instances, which are EC2 instances that run on hardware dedicated to a single customer for additional isolation
 - when an ECS container is stopped, the container instance status remains `Active` but the container Agent status changes to `FALSE` after a few minutes
 - Lambda and ECS only support blue/green deployments
-- Lambda limits compute and storage resources used to run and store function. Limits apply per-region and can be increased using the support centre console
-    - concurrent executions: 1000 default limit
-    - function and layer storage: 75 GB default limit
+
 
 ## CloudTrail
 
@@ -512,6 +560,22 @@ Addresses 3 core scenarios:
 ## VPC
 
 - VPC flow logs is a feature that enables capturing of information about the IP traffic to and from network interfaces in VPC
+
+## CloudFront
+
+- for web distributions, to control how long objects stay in a CloudFront cache before CloudFront forwards another request to the origin
+    - configure origin to add a `Cache-Control` or `Expires` header field to each object
+    - specify a value or minimum TTL in CloudFront cache behaviours
+    - use the default value of 24 hours
+- to require HTTPS between viewers and CloudFront, specify either
+    - *Redirect HTTP to HTTPS*
+        - viewers can use both protocols, GET and HEAD requests are automatically redirected to HTTPS requests, CloudFront returns HTTP 301 (moved permanently) along with the new HTTPS URL. The viewer then resubmits the request to CloudFront using the HTTPS URL.
+        - for other HTTP requests, responses with a HTTP 907 (temporary redirect), ensuring the same message gets sent (for HTTP 1.1 or above)
+    - *HTTPS only*
+        - change the origin protocol policy for applicable origins
+        - HTTPS only means CloudFront uses only HTTPS to communicate with custom origin
+        - Match Viewer means CloudFront communicates with custom origin using HTTP or HTTPS depending on the protocal of the viwer request.
+- allows for very high GET performance. Using CloudFront, users can access data locally with low-latency and high throughput from the nearest POP. Also results in a decrease in the number of read requests directly to S3 buckets
 
 
 ## Other
@@ -540,5 +604,10 @@ Addresses 3 core scenarios:
             - resource filters
     - to specify resources, paths and values can be specified in resource filters components.
     - TODO: have a skim of this service to ensure you understand how to apply tags and IDs as well as the action set 
+- setting up client side encryption recommended pattern
+    1. use `GenerateDataKey` to get a data encryption key
+    2. use the plaintext data encryption key from the plaintext field of previous response to encrypt data locally, then erase the plaintext data key from memory
+    3. store the encrypted data key (retunred previously in the CiphertextBlob field of the response) alongside the locally encrypted data
+    4. then send the data.
 
 TODO: NAT gateways
