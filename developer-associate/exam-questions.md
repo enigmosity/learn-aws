@@ -40,6 +40,7 @@
         - turn on table view to search for it if required
 - Beanstalk ASG manages environment instances, and the launch configuration of the instances. Modify the launch configuration to change instance type, key pair, EBS storage and other settings that can only be configured at instance launch. Include a YAML env manifest in root of application source bundle to configure environment name, solution stack and [environment links](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/environment-cfg-links.html) to use when creating the environment. An env manifest uses that same format as [saved configurations](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/environment-configuration-savedconfig.html)
 - Beanstalk supports deployment of web applications from Docker containers. With Docker containers, can define your own runtime environment, choose platform, programming language and any dependencies that aren't supported by other platforms. Containers are self-contained and include all the config information and software the web application requires to run
+- if run on premise, there is an assumption that running on docker containers could be hard as it is entirely unknown, and that developing a custom AMI or platform will be easier
 
 ## SAM
 
@@ -83,7 +84,7 @@
 - *Update expression* is used to specify *how an update item will modify an item's attribute*.
 - *Condition expression* is used to specify a *condition that should be met to modify an item's attribute*
 - *Expression attribute names* are used as an *alternate name in an expression instead of an actual attribute name*
-- to specify search criteria, use a **key condition expression** - *a string that determines the items to be read from the table or index. Must specify the partition key name and value as an equality condition*
+- to specify search criteria, use a **key condition expression** - *a string that determines the items to be read from the table or index. Must also specify the partition key name and value as an equality condition*
 - encryption is mandatory at time of table creation and is of two types
     1. DEFAULT method using 'AWS owned key'
     2. KMS method using 'AWS managed key'
@@ -148,6 +149,7 @@ Addresses 3 core scenarios:
     - *AfterAllowTraffic*: hooks to run tasks after shiting traffic to the new Lambda version
     - Start, AllowTraffic & end cannot be scripted
 - recommended to separate lambda handler from core logic to make function clean and unit-testable
+- Lambda's can have dead letter queues which can then be reprocessed, even if you're not initially using SQS or SQS to invoke the function, you can use a DLQ to create an SQS or SNS queue and reprocess later. 
 
 ## CloudFormation
 
@@ -170,7 +172,7 @@ Addresses 3 core scenarios:
     - run create-project or update-project command, setting buildspec value path to an alternate build spec file 
     - run start-build command, setting buildspecOverride value to path to alternate buildspec file
 - TODO: check all possible basic documentation errors for AWS services.
-- resources in VPC not typically accessible by CodeBuild. To access, provide additional VPC specific configuration info as part of CodeBuild project config. Includes VPC ID, subnet IDs, and VPC security group IDs. VPC enabled builds are then able to access resources inside a VPC, making it possible to
+- resources in VPC not typically accessible by CodeBuild. *To access, provide additional VPC specific configuration info as part of CodeBuild project config*. Includes VPC ID, subnet IDs, and VPC security group IDs. VPC enabled builds are then able to access resources inside a VPC, making it possible to
     - run integration tests from build against RDS databases in private subnets
     - query data in elasticache cluster from tests
     - interact with internal web services hosted on EC2, ECS or via ELBs
@@ -352,6 +354,7 @@ Addresses 3 core scenarios:
 - *provides 3500 PUT requests/second/prefix in a bucket, 5500 GET requests/sec/prefix in a bucket*.
 - invoke a lambda with S3 events and pass event data as a parameter, enabling the response to S3 bucket changes. SQS doesn't in itself allow you to do anything, you need more consumers.
 - to host a static website, configure an S3 bucket for website hosting and then upload content to the bucket. bucket must have public read access. It is intentinoal that everyone in the world will have read access to this bucket.
+- if given the choice, seriously consider whether or not the overhead of multiple buckets is worthwhile. Suspect amazon will typically lean to many buckets not being worthwhile after answering one question.
 
 ### S3 Inventory
 
@@ -364,6 +367,12 @@ Addresses 3 core scenarios:
 - if you're making a request to outside of an APIs own domain, you also need to enables CORS
 - in config, can specify values for which methods are allowed using the *AllowedMethod* element
     - GET, PUT, POST, DELETE, HEAD
+- for simple cross-origin POST method requests, response from resource needs to include the header `Access-Control-Allow-Origin` where the value of the header key is set to `*` or to the origins allowed to access that resource. When a browser receives a non-simple HTTP request, the CORS protocol requires the browser to send a preflight request to the server and wait for approval (or a request for credentials) from the server before sending the actual request. The *preflight request* appears to your API as an HTTP request that
+    - includes an origin header
+    - uses the OPTIONS method
+    - includes headers:
+        - `Access-Control-Request-Method`
+        - `Access-Control-Request-Headers`
 
 ## Envelope Encryption
 
@@ -415,6 +424,7 @@ Addresses 3 core scenarios:
     - afterinstall hook is supported with in-place deployment and blue/green in case of replacement instances
     - directory for storing scripts to be executed in hooks should be at root level of the EC2 instance.
     - 'runas is an optional parameter in the hooks section
+- deployment to on-premise do not use IAM instance profiles
 
 ## ELB
 
@@ -476,6 +486,7 @@ Addresses 3 core scenarios:
     - `_X_AMZN_TRACE_ID`: contains tracing header, which includes the sampling decision, trace ID, and parent segment ID. If Lambda receives a tracing header when function is invoked, the header will be used to populate this environment variable. If a tracing header was not received, Lambda will generate one.
     - `AWS_XRAY_CONTEXT_MISSING`: X-Ray SDK uses this variables to determine behaviour in the even that the function tries to record X-Ray data, but a tracing header is not available. Lambda sets values to LOG_ERROR by default
     - `AWS_XRAY_DAEMON_ADDRESS`: environment variable exposes daemon's address as: `IP_ADDRESS:PORT`. Use the daemon's address to send trace data to the daemon directly without using the X-Ray SDK
+- to run on ECSm create a Docker image that runs the X-Ray daemon, upload it to a docker image repository, then deploy to the ECS cluster. Use port mappings and metwork mode settings in task definition file to allow application to communicate with the daemon container.
 
 ## Kinesis
 
@@ -634,4 +645,3 @@ Addresses 3 core scenarios:
     2. use the plaintext data encryption key from the plaintext field of previous response to encrypt data locally, then erase the plaintext data key from memory
     3. store the encrypted data key (retunred previously in the CiphertextBlob field of the response) alongside the locally encrypted data
     4. then send the data.
-    
