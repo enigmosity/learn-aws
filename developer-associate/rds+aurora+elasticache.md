@@ -270,6 +270,7 @@ RDS can have delete protection turned on that you have to turn off before being 
 Pros:
 - only requested data is cached
 - node failures are not fatal
+
 Cons:
 - cache miss penalty that results in 3 round trips, noticable delay for request
 - stale data: data can be updated in the db and outdated in cache
@@ -282,6 +283,7 @@ The exam requires you to be able to read the code for a lazy loading pattern
 Pros:
 - data in cache is never stale, reads are quick
 - write penalty vs read penalty. each write requires two calls, which users understand better
+
 Cons:
 - missing data until databse is added/updated. Mitigation is to implement lazy loading as well
 - *cache churn* - a lot of the data will never be read

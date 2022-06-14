@@ -14,8 +14,9 @@
 - if you want to deploy a worker application that processes periodic background tasks, application source bundle must also include a cron.yaml file
 - *immutable deployments*: launch a full set of new instances running the new version of the application in a separate ASG, alongisde the instances running the old version. If new instances don't pass healthchecks, Elastic Beanstalk terminates them leaving the original instances untouched.
 - Blue/Green deployments allow you to have a separate deployment environment. Allow avoidance of downtime. Deploy a new version to separate environments and then swap CNAMEs (called swap environment URLs) of two environments to instantly redirect traffic to new version. Need to create a new environment (can clone current) to do this.
-- TODO: CHECK CNAME AND OTHER R53 TYPES
-- if you can't find an AMI to run your code, use Packer to create a custom platform which will run it. TODO: what is the difference between a custom AMI and a custom platform?
+- if you can't find an AMI to run your code, use Packer to create a custom platform which will run it.
+- custom platform is a more advanced cusomtisation than a custom image. Lets you develop an entire new platform from scratch, customising operating system, additional software, and scripts the beanstalk runs on platfroms instances. Enables building of platforms for applications that use languages or other infrastructure which beanstalk doesn't provide a managed platform for. Can also use automated, scripted way to create and maintain customisation.
+- custom images, where you modify an AMI for use with an existing beanstalk platform, and beanstalk still provides the platform scripts and controls the platforms software stack.  maintenance requires manual changes in the running instances.
 - custom AMIs can improve provisioning times when instances are launched in your environment if you need to install a lot of software not in standard AMIs. Configuration files are great (.ebextensions), but can be slow and take a long time during environment creation and update. AMI is faster.
 - custom_platform.json is the file for creating a custom platform with Packer
     - *source_ami* is required in a packer template. It is the base operating systems used to create a custom AMI. Could be: amazon linux AI, ubuntu1604, rhel7, rhel6
@@ -89,7 +90,10 @@
 - Dynamo streams allow Lambda functions to trigger on database modifications. Enable streams, associate the stream ARN with a Lambda function, and immediately after the table is modified, a record appears in the stream. Lambda polls the stream for records and invokes synchronously.
 - *BatchGetItem* API allows you to pass multiple partitions key values in a single request, so you can then query for multiple items at once
 - *HTTP 400 indicates problem with the request* (authentication failure, missing required parameters, or exceeding a table's provisioned throughput). Will have to resolve issue in application, and resubmit to DynamoDB
-- TODO: [understand how to write to a table using the CLI](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithTables.Basics.html)
+- [understand how to write to a table using the CLI](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithTables.Basics.html)
+- key definitions:
+    - `HASH` is for a partition key
+    - `RANGE` is for a sort key
 - not to be used to table joins
 - best practices for defining secondary indexes:
     - consider projecting fewer attributes to minimise the size of items written to the index. This only applies if the soze of projected attributes would otherwise be larger than a single WCU (1KB)
@@ -106,14 +110,22 @@ Addresses 3 core scenarios:
 3. for read-heavy or bursty workloads, DAX provides increased throughput and potential operational cost savings by reducing the need to over-provision read capacity units. Especially beneficial for applications that require repeated reads for individual keys.
 
 - for strongly-consistent reads, a DAX cluster will pass all requests directly  to Dynamo and not cache anything
-- write-through cache, issue writes directly so that your writes are immediately reflected in the item cache
-- TODO: investigate Write-through caches, side cacheing with Redis and Write Around Cache
+- write-through cache, issue writes directly so that your writes are immediately reflected in the item cache. Write to both the data store and the data cache
+- client side cache with redis caches keys that the client uses to access resources.
+- write around is where you don't write to the cache when writing data to the data store
 
 ## Lambda
 
 - VPC-specific configuration information such as VPC subnets IDs and security grup IDs are required in order to enable Lambda functions to access resources within a VPC.
-- TODO: look into the $LATEST alias, $LATEST version has two ARNs associated with it, Qualified ARN and Unqualified ARN. What does that mean? [Probably start here.](https://docs.aws.amazon.com/lambda/latest/dg/configuration-versions.html)
-- a *Publish version* is a snapshot coy of a Lambda Function code and configuration in $LATEST version. No configuration changes can be done to a published version and it has a unique ARN which cannot be modified.
+- qualified ARN: function ARN with a reference to a specific version
+- unqualified ARN implicitly invokes the $LATEST version (and therefore publishes that version if it hasn't been already)
+- a lambda function version includes
+    - the function code and all associated dependencies
+    - the lambda runtime that invokes the function
+    - all the function settings, including environment variables
+    - an ARN to identify the specific version
+- a *Publish version* is a snapshot copy of a Lambda Function code and configuration in $LATEST version. No configuration changes can be done to a published version and it has a unique ARN which cannot be modified.
+- $LATEST is the latest unpublished change to the lambda function, it could be the current latest published change as well.
 - best practice is to avoid using recursive Lambda functions, as it could lead to an unintended volu,e of function invocations and escalated costs. If you do create one, set the concurrent execution limit to Zerp to immediately throttle all invocations to the function while you update the code.
 - Lambda functions have a default timeout of 3 seconds. This timeout can be expanded to 900 seconds
 - default memory of 128 MB. CPU is allocated by AWS automatically, proportional to memory.
@@ -121,7 +133,6 @@ Addresses 3 core scenarios:
 - minimise deployment package to runtime necessities. For functions in Java and .Net, avoid uploading the entire AWS SDK library. Instead selectively depend on modules which pick up components of the SDK you need.
 - by default, an alias points to a single Lambda version. When the alias is updated to point to a different version incoming request traffic instantly points to the updated version. This exposes that lias to any potential instabilities introduced by the new version. To minimise impact, implement the routing-config parameter of the Lambda alias that allows you to point to two different versionf of the lambda and dictate what percentage of incoming traffic is sent to each.
 - with *Lambda proxy integration*, entire request received from client is sent to backend AWS Lambda function using ANY method. Actual HTTP method is received from the client which can be any of the HTTP methods.
-- TODO: WHAT IS LAMBDA PROXY INTEGRATION??
 - `Routing-Config` parameter of the Lambda alias allows one to point to two different versions of the Lambda function and determine what percentage of incoming traffic is sent to each version. Use percentage values out of 1 (ie, 5% = 0.05) [Read more.](https://docs.aws.amazon.com/lambda/latest/dg/lambda-traffic-shifting-using-aliases.html)
 - only pay for the compute time you consume, no charge when not running. administrative headache is minimised by AWS handling the infrastructure, spin up and spin down etc.
 - any state under step functions can encounter runtime errors. Lambda can experience transient service errors. By Default, when a state reports an error, Step Functions case execution to fail entirely. For occassionally expected errors, best practice is to retry. In *Retry code*, `ErrorEquals` field is required string that matches error names and all other fields are optional. `BackoffRate` is optional, if not specified, default of 2.0
@@ -204,9 +215,9 @@ Addresses 3 core scenarios:
 - Memecached supports:
     - simple caching model
     - multithreaded performance with utilisation of multiple cores
-    - TODO: [check out redis vs memached.](https://aws.amazon.com/elasticache/redis-vs-memcached/)
+    - [redis vs memached.](https://aws.amazon.com/elasticache/redis-vs-memcached/)
 - Redis
-    - Redis soted sets move the computational complexity associated with loeaderboard from your application to your redis cluster. Sorted sets guarantee both uniqueness and element ordering. Each time a new element is added to the sorted set, it's reranked in real-time, then added to the set in its appropriate numeric position
+    - Redis sorted sets move the computational complexity associated with leaderboard from your application to your redis cluster. Sorted sets guarantee both uniqueness and element ordering. Each time a new element is added to the sorted set, it's reranked in real-time, then added to the set in its appropriate numeric position
 - *Write Around Cache* is useful when there is a considerable amount of data to be written to the database
 - *Side Cache using Redis* is eventually consistent and non-durable which may add an additional delay
 - *Write Through cache using Redis* means chances of missing data during new scaling out
@@ -229,12 +240,12 @@ Addresses 3 core scenarios:
 - policy simulator commands typically require calling API operations to do two things
     1. evaluate the policies and return the list of context keys that they reference. Need to know what context keys are referenced so you can supply values for them in the next step
     2. simulate the policies, providing a list of actions, resources and context keys that are used during the simulation
-    - TODO: what are context keys?
+    - *condition context keys*/condition keys are keys included in the request of all AWS requests. They provide information about the request itself or the resources that the request references. Can check that keys have specified values before allowing the action requested by the user with the `Condition` element of the json policy.
 - IAM policy simulator testing to test resource-based policies requires resources to be included in the simulator and the resource policy needs to be selected for that resource.
 - *on-premise should not use IAM Roles/instance profiles* [more info](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2_instance-profiles.html) [about what is](https://docs.aws.amazon.com/en_pv/codedeploy/latest/userguide/instances-ec2-configure.html) [needed for on prem](https://docs.aws.amazon.com/codedeploy/latest/userguide/tutorials-on-premises-instance.html)
 - security tokens shouldn't be used for development practices, should instead be using temporary security credentials to minimise risk. Assume them using STS.
 - *Access Keys*: consist of an access key ID and a secret access key, used to sign programmatic requests made to aws using SDKs, REST or Query API operations
-- TODO: [Creating roles with external ID's](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
+- external IDs are optional and can be applied to trust policies on IAM roles that can be assumed by other accounts - to require an external id when assuming a role, update the trust policy with the external id. It allows the user that is assuming the role to assert the circumstances in which they are operating. It also provides a way for accound owners to permit the role to only be assumed under specific circumstances. [Creating roles with external ID's](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
 - customer managed policies allow access to resources, they have versions, which you can revert/rollback to as required.
 - IAM roles give services/account ability to interact with other services. *If a service needs to interact with another service, give it a role!*
 - trust policies give other roles/services the ability to assume a role
@@ -254,11 +265,19 @@ Addresses 3 core scenarios:
 ## API Gateway
 
 - Stage variables are name-value pairs that you can define as configuration attributes associated with a deployment stage of an API. They act like environment variables and can be used in your API setup and mapping templates.
-- TODO: what is the HTTP integration request of the API? 
+- what is the HTTP integration request of the API? 
     - [probably start here](https://docs.aws.amazon.com/apigateway/latest/developerguide/stage-variables.html)
     - [or with these gateway docs](https://docs.aws.amazon.com/apigateway/latest/developerguide/welcome.html#api-gateway-overview-developer-experience)
     - [or with these ones](https://aws.amazon.com/blogs/compute/using-amazon-api-gateway-as-a-proxy-for-dynamodb/)
     - [or these integration types](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-integration-types.html)
+- integration types
+    - `AWS`: lets an API expose AWS service actions. Must configure both integration request and response and set up necessaru data mappings from the method request to the integration request, and from the integration response to the method response
+    - `AWS_PROXY`: lets an API method be intergrated with the Lambda function invocation action with a flexible, versatile and streamlined integration setup. Relies on direct interactions between the client and the integrated lambda function. Also known as Lambda Proxy Integration
+    - `HTTP`: lets an API expose HTTP endpoints in the backend. Must configure both the integration request and integration response, data mappings from method request to integration request, and integration response to method response.
+    - `HTTP_PROXY`: allows a client access to the backend HTTP endpoints with a streamlined integration setop on a single API method. Do not set the integration request or response. Gateway passes the request from client ot the HTTP endpoint and passes the outgoing response from the HTTP endpoint to the client
+    - `MOCK`: lets API Gateway return a response without sending the request further to the backend. Useful for API testing as it can be used to test integration set up without incurring charges for backend use and to enable collaborative dev on an API
+    - lambda custom integration with API gateway is where the endpoint corresponds to invoking the function action of the lambda service
+    - HTTP integration is the
 - developer controls behaviour of API's frontend interactions by configuring the method request and a method response. Control behaviour of backend API interactions by setting up the integration request and integration response. These involve data mappings between a method and its corresponding integration.
 - stage variable can be used as part of the HTTP integration URL in the folowing cases
     - full URI without protocol
@@ -288,6 +307,7 @@ Addresses 3 core scenarios:
 - control Gateway API method access with IAM *policies*, *roles* and *resource* *policies*
 - `Aws_Proxy` can be used for an API method to be integrated with a Lambda where incoming requests from the clients are passed as input to the Lambda.
 - to deploy an API, create an API deployment and associate it with a stage. Each stage is a snapshot of the API and is made available for the client to call. Stages enable robust version control of APIs. For each stage, optimise API performance by adjusting the default account-level request throttling limits and enabling API caching. In addition, can override stage-level settings for individual methods and define stage varaibles to pass stage-specific environment contexts to the API integration at runtime. *Every time you update an API, which includes modifications of methods, integrations, authorisers, and anything else other than stage settings, you must redploy the API to an existing or new stage.*
+- API Gatewau Lambda proxy integration is a mechanism to build an API with a setup of a single API method. The Lambda proxy integration allows the client to call a single Lambda function in the backend. The function accesses many resources or features of other AWS services, including calling other lambda functions. When a client submits a request, the API Gateway passes the entire request raw as-is to the lambda function, except the order of request parameters is not preserved. Configuration data for the gateway can also be included. A Lambda proxy integration is more potent when it is configured for an API method involving a generic proxy resource. The generic proxy resource can be denoted by a special templated path variable of {proxy+}, the catch-all ANY method placeholder, or both. The client can pass the input to the backend Lambda function in the incoming request as request parameters or applicable payload. The request parameters include headers, URL path variables, query string parameters, and the applicable payload. The integrated Lambda function verifies all of the input sources before processing the request and responding to the client with meaningful error messages if any of the required input is missing. If you want more information, read [this page.](https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html)
 
 ## CloudWatch
 
@@ -300,7 +320,8 @@ Addresses 3 core scenarios:
 - Detailed monitoring is only pertinant for existing services available in AWS
 - unified CloudWatch agent enables:
     - collection of more system-level metrics from EC2 instances, including in-quest metrics, in addition to metrics listed in EC2 Metrics and Dimensions. Additional metrics are listed 'Metric Collected by the CloudWatch Agent'.
-        - TODO: what are EC2 metrics and Dimensions?
+        - CloudWatch metric: a metric represents a time-ordered set of data points that are published to CloudWatch. Think a variable to monitor. Metrics only exist in the region they are created, cannot be deleted but expire after 15 months if no new data is published to them. Must be uniquely identified by name, namespace and zero or more dimensions. Each data point in a metric has a time stamp, and optionally a measure.
+        - CloudWatch Dimension: is a name/value pair that is part of the identity metric, assign up to 10 dimensions to a metric. Metrics have characteristics to describe them, dimensions can be thought of as categories for those characteristics.
     - collect system-level metrics from on-premise servers. Can include servers in hybrid environments as well as servers not managed by AWS
     - collect logs from EC2 instances and on-premise servers running Windows Server or Linux.
 
@@ -424,7 +445,7 @@ Addresses 3 core scenarios:
     5. have the application retrieve a set of temporary credentials and use them
 - instance types
     - with M5 General-Purpose instance, Elastic Network Adapter is used to support Enhance Networking. M5 GP also supports network performance with 10Gbps to 25 Gbps based upon instance type. T2 does not support Enhance Networking and only supports network performance to 1Gbps
-    - TODO: what is Intel 82599 Virtual Function interface?
+    - Amazon EC2 provides enhanced networking capabilities through the Intel 82599 VF interface which is available on some instances.
 - instance types
     - M5: general purpose instance
     - Mac: apple system, suitable for applications that require XCode
@@ -444,7 +465,7 @@ Addresses 3 core scenarios:
 - [info on configuring AWS X-Ray daemon](https://docs.aws.amazon.com/xray/latest/devguide/xray-daemon-configuration.html)
 - on ECS, create a docker image that runs the X-Ray daemon, upload it to a docker image repository, then deploy to an ECS cluster. Use port mappings and network mode settings in task definition files to allow the application to communicate with the daemon container.
 - with Default Sampling Rule, X-Ray records are one request per second, and 5% of any additional requests per host
-- TODO: [read more about sampling](https://docs.aws.amazon.com/xray/latest/devguide/xray-api-sampling.html)
+- [read more about sampling](https://docs.aws.amazon.com/xray/latest/devguide/xray-api-sampling.html)
     - Resevoir rate + fixed rate
     - number = total requests - resevoir rate, take the fixed rate % from the number
 - SDK provides
@@ -522,7 +543,7 @@ Addresses 3 core scenarios:
     - duration of the temporary security credentials
     - role session name, string value used to identify the session, which can be captured and logged by CloudTrail to help distinguish between role users during an audit
 - `aws sts decode-authorization-message` command decodes information about authorisation status of a request from an encoded mesage returned in an AWS response
-- TODO: what is a trail in cloudtrail?
+- a trail enables ongoing delivery of events as log files to an S3 bucket. Ensures a record of events extending past 90 days, option to automatically monitor and alarm on specified event by sending log events to CloudWatch Logs, and an option to query logs and analyse service activity with Athena
 - to track a role and activity, use cloudwatch agents to detect the ARN in the event record of CloudTrail, which will trigger an alarm. [Read more](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/send-cloudtrail-events-to-cloudwatch-logs.html)
 
 ## ECS
@@ -560,6 +581,10 @@ Addresses 3 core scenarios:
 ## VPC
 
 - VPC flow logs is a feature that enables capturing of information about the IP traffic to and from network interfaces in VPC
+- NAT gateway is a Network Address Translation service. You can use a NAT gateway to give instances in a private subnet can connect to services outof the the VPC, but external services cannot innitiate a connection with those instances.
+    - `Public` NAT gateways allow instances in private subnets to connect to the internet through the gateway. Must associate an elastic IP address with the fateway at creation. Route traffic from the NAT gateway to the internet gatewau for the VPC. Alternatively use a public gatewau to connect to other VPCs or an on-premise network. 
+    -  `Private` gateways allow instance in private subnets to connect to instances in other VPCs or on-prem networks through the private gateway. Route traffic from the NAT gateway through a transit gateway or a virtual private gateway. Cannot associate an elastic IP address with a private NAT gateway. Can attach an internet gateway to a VPC with a private nat gateway, but if you route traffic from the private NAT gateway to the internet gateway, the internet gateway drops traffic
+    - The NAT gateway replaces the source IP address of the instances with the IP address of the instancxes with the IP address of the NAT gatewau. When sending response traffic to instance, the NAT gateway translates addresses back to the original source IP address
 
 ## CloudFront
 
@@ -609,5 +634,4 @@ Addresses 3 core scenarios:
     2. use the plaintext data encryption key from the plaintext field of previous response to encrypt data locally, then erase the plaintext data key from memory
     3. store the encrypted data key (retunred previously in the CiphertextBlob field of the response) alongside the locally encrypted data
     4. then send the data.
-
-TODO: NAT gateways
+    
